@@ -162,6 +162,14 @@ async function currentTab() {
 const mediaByTab = new Map();
 const MEDIA_STALE_MS = 10000;
 
+function findPlayingMedia() {
+  const now = Date.now();
+  for (const [, m] of mediaByTab) {
+    if (!m.paused && now - m.t < MEDIA_STALE_MS) return m;
+  }
+  return null;
+}
+
 function buildMedia(m) {
   const now = Date.now();
   const a = {
@@ -220,26 +228,33 @@ async function pushActivity(force) {
     lastActivity = null;
     return;
   }
-  const t = await currentTab();
-  if (!t) return;
-
-  const m = mediaByTab.get(t.id);
-  const mediaFresh = m && Date.now() - m.t < MEDIA_STALE_MS;
 
   let activity, key;
-  if (mediaFresh) {
-    activity = buildMedia(m);
-    const bucket = Math.floor((m.currentTime || 0) / 5);
-    key = `m|${m.paused ? 1 : 0}|${m.title}|${m.artist}|${bucket}|${m.thumb}`;
+  const playing = findPlayingMedia();
+
+  if (playing) {
+    activity = buildMedia(playing);
+    const bucket = Math.floor((playing.currentTime || 0) / 5);
+    key = `m|0|${playing.title}|${playing.artist}|${bucket}|${playing.thumb}`;
   } else {
-    const d = describe(t);
-    if (!d) {
-      send({ type: "clear" });
-      lastActivity = null;
-      return;
+    const t = await currentTab();
+    if (!t) return;
+    const m = mediaByTab.get(t.id);
+    const mediaFresh = m && Date.now() - m.t < MEDIA_STALE_MS;
+    if (mediaFresh) {
+      activity = buildMedia(m);
+      const bucket = Math.floor((m.currentTime || 0) / 5);
+      key = `m|${m.paused ? 1 : 0}|${m.title}|${m.artist}|${bucket}|${m.thumb}`;
+    } else {
+      const d = describe(t);
+      if (!d) {
+        send({ type: "clear" });
+        lastActivity = null;
+        return;
+      }
+      activity = buildBrowse(d);
+      key = `b|${d.details}|${d.state}|${d.largeImage}|${cfg.activityType}`;
     }
-    activity = buildBrowse(d);
-    key = `b|${d.details}|${d.state}|${d.largeImage}|${cfg.activityType}`;
   }
 
   if (!force && key === lastActivity) return;
@@ -280,7 +295,9 @@ browser.tabs.onUpdated.addListener((id, info) => {
   if (info.url) mediaByTab.delete(id);
   if (info.url || info.title) pushActivity();
 });
-browser.tabs.onRemoved.addListener((id) => mediaByTab.delete(id));
+browser.tabs.onRemoved.addListener((id) => {
+  if (mediaByTab.delete(id)) pushActivity();
+});
 browser.windows.onFocusChanged.addListener(() => pushActivity());
 
 browser.idle.setDetectionInterval(IDLE_SECS);
@@ -310,8 +327,7 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
   if (msg && msg.kind === "media" && sender && sender.tab) {
     const d = msg.data || {};
     mediaByTab.set(sender.tab.id, { ...d, t: Date.now() });
-    const cur = await currentTab();
-    if (cur && cur.id === sender.tab.id) pushActivity();
+    pushActivity();
     return;
   }
   if (msg === "reconnect") {
