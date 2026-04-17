@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Discord RPC</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    width: 320px;
+    margin: 0;
+    padding: 14px;
+    background: #1e1f22;
+    color: #e4e6eb;
+  }
+  h1 { font-size: 14px; margin: 0 0 10px; color: #5865f2; }
+  label { display: block; font-size: 12px; margin-top: 10px; color: #b5bac1; }
+  input[type=text], input[type=url] {
+    width: 100%; box-sizing: border-box;
+    padding: 6px 8px;
+    background: #2b2d31;
+    border: 1px solid #1e1f22;
+    color: #e4e6eb;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  input:focus { outline: 1px solid #5865f2; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row input[type=text] { flex: 1; }
+  button {
+    background: #5865f2; color: #fff;
+    border: 0; padding: 7px 12px;
+    border-radius: 4px; cursor: pointer;
+    font-size: 12px; margin-top: 12px;
+  }
+  button.secondary { background: #4e5058; }
+  button:hover { filter: brightness(1.1); }
+  .status {
+    margin-top: 12px; padding: 8px;
+    background: #2b2d31; border-radius: 4px;
+    font-size: 11px; min-height: 28px;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .ok { background: #23a559; }
+  .bad { background: #f23f42; }
+  small { color: #80848e; font-size: 10px; }
+  .toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Discord Rich Presence</h1>
+
+  <label>Client ID (Discord Application ID)</label>
+  <input type="text" id="clientId" placeholder="1493453061987893318">
+
+  <label>Bridge WebSocket Address</label>
+  <input type="url" id="addr" placeholder="ws://127.0.0.1:6473/rpc">
+
+  <label>Button 1 label</label>
+  <div class="row">
+    <input type="text" id="b1label" placeholder="Visit site">
+    <input type="text" id="b1url" placeholder="https://...">
+  </div>
+
+  <label>Button 2 label</label>
+  <div class="row">
+    <input type="text" id="b2label" placeholder="">
+    <input type="text" id="b2url" placeholder="">
+  </div>
+
+  <label>Activity verb</label>
+  <select id="activityType" style="width:100%; padding:6px 8px; background:#2b2d31; color:#e4e6eb; border:1px solid #1e1f22; border-radius:4px; font-size:12px;">
+    <option value="0">Playing</option>
+    <option value="2">Listening</option>
+    <option value="3" selected>Watching</option>
+    <option value="5">Competing</option>
+  </select>
+
+  <div class="toggle">
+    <input type="checkbox" id="enabled">
+    <label for="enabled" style="margin:0">Enabled</label>
+  </div>
+  <div class="toggle">
+    <input type="checkbox" id="useAssets">
+    <label for="useAssets" style="margin:0">Show site favicon as large image (auto, via Discord proxy)</label>
+  </div>
+
+  <button id="save">Save</button>
+  <button id="reconnect" class="secondary">Reconnect</button>
+
+  <div class="status" id="status"><span class="dot bad"></span>loading...</div>
+  <small>Requires the local bridge to be running.</small>
+
+  <script src="popup.js"></script>
+</body>
+</html>

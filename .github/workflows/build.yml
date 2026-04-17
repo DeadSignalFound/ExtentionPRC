@@ -1,0 +1,93 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    name: bridge (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            ext: .exe
+            artifact: discord-rpc-bridge-windows-amd64.exe
+          - os: ubuntu-latest
+            goos: linux
+            ext: ''
+            artifact: discord-rpc-bridge-linux-amd64
+          - os: macos-latest
+            goos: darwin
+            ext: ''
+            artifact: discord-rpc-bridge-darwin-amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: bridge/go.sum
+
+      - name: build
+        working-directory: bridge
+        run: go build -trimpath -ldflags="-s -w" -o ../dist/${{ matrix.artifact }} .
+
+      - name: vet
+        working-directory: bridge
+        run: go vet ./...
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  extension:
+    name: extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: lint manifest
+        run: npx --yes web-ext@8 lint --source-dir=extension --warnings-as-errors=false
+
+      - name: package
+        run: |
+          mkdir -p dist
+          npx --yes web-ext@8 build --source-dir=extension --artifacts-dir=dist --overwrite-dest
+          mv dist/*.zip dist/firefox-discord-rpc.xpi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firefox-discord-rpc.xpi
+          path: dist/firefox-discord-rpc.xpi
+
+  release:
+    name: release
+    needs: [bridge, extension]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
