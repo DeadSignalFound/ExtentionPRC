@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -59,6 +58,7 @@ type ipcClient struct {
 	conn     net.Conn
 	wmu      sync.Mutex
 	clientID string
+	pipeName string
 	nonce    uint64
 	pending  sync.Map
 	onEvent  func(string, map[string]any)
@@ -70,11 +70,11 @@ type reply struct {
 }
 
 func newIPC(clientID string, onEv func(string, map[string]any)) (*ipcClient, error) {
-	c, err := dialIPC()
+	c, pipe, err := dialIPC()
 	if err != nil {
 		return nil, err
 	}
-	ic := &ipcClient{conn: c, clientID: clientID, onEvent: onEv}
+	ic := &ipcClient{conn: c, clientID: clientID, pipeName: pipe, onEvent: onEv}
 	if err := ic.handshake(); err != nil {
 		c.Close()
 		return nil, err
@@ -82,16 +82,16 @@ func newIPC(clientID string, onEv func(string, map[string]any)) (*ipcClient, err
 	return ic, nil
 }
 
-func dialIPC() (net.Conn, error) {
+func dialIPC() (net.Conn, string, error) {
 	if runtime.GOOS == "windows" {
 		for i := 0; i < 10; i++ {
 			p := fmt.Sprintf(`\\.\pipe\discord-ipc-%d`, i)
 			c, err := winio.DialPipe(p, nil)
 			if err == nil {
-				return c, nil
+				return c, p, nil
 			}
 		}
-		return nil, errors.New("discord ipc pipe not found (is discord running?)")
+		return nil, "", errors.New("discord ipc pipe not found (is discord running?)")
 	}
 
 	roots := []string{os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("TMPDIR"), os.Getenv("TMP"), os.Getenv("TEMP"), "/tmp"}
@@ -103,11 +103,11 @@ func dialIPC() (net.Conn, error) {
 			p := fmt.Sprintf("%s/discord-ipc-%d", r, i)
 			c, err := net.Dial("unix", p)
 			if err == nil {
-				return c, nil
+				return c, p, nil
 			}
 		}
 	}
-	return nil, errors.New("discord ipc socket not found")
+	return nil, "", errors.New("discord ipc socket not found")
 }
 
 func (c *ipcClient) send(op int32, payload []byte) error {
@@ -202,27 +202,26 @@ func (c *ipcClient) readLoop(onErr func(error)) {
 		case opFrame:
 			var m map[string]any
 			if err := json.Unmarshal(data, &m); err != nil {
-				log.Println("ipc: bad frame:", err)
+				logWarn("ipc bad frame: %v", err)
 				continue
 			}
 			evt, _ := m["evt"].(string)
 			cmd, _ := m["cmd"].(string)
 			nonce, _ := m["nonce"].(string)
 			if evt == "ERROR" {
-				log.Printf("ipc: discord error (cmd=%s nonce=%s): %s", cmd, nonce, string(data))
+				logErr("ipc error (cmd=%s nonce=%s): %s", cmd, nonce, string(data))
 				if c.onEvent != nil {
 					c.onEvent("discord_error", m)
 				}
 			} else if cmd == "SET_ACTIVITY" {
-				log.Printf("ipc: SET_ACTIVITY ack nonce=%s", nonce)
 				if c.onEvent != nil {
 					c.onEvent("activity_ack", m)
 				}
 			} else if cmd == "DISPATCH" {
-				log.Printf("ipc: dispatch evt=%s", evt)
+				logDiscord("dispatch evt=%s", evt)
 			}
 		case opClose:
-			log.Printf("ipc: close frame: %s", string(data))
+			logWarn("ipc close frame: %s", string(data))
 			onErr(fmt.Errorf("ipc closed by discord: %s", string(data)))
 			return
 		}
